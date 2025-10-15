@@ -7,7 +7,7 @@ var cvs = $("#cvs");
 var ctx = cvs.getContext("2d");
 var ti;
 var rr;
-var ping = null; // 用於顯示延遲
+var ping = null;
 var map = { width: 0, height: 0 };
 var client_snakes = [];
 var client_foods = [];
@@ -350,7 +350,7 @@ function draw() {
         let ly = 130;
         let r = Math.min(200, cvs.width / 3);
         
-        // 繪製標題
+        // title
         ctx.font = '40px Arial';
         ctx.fillStyle = '#f00';
         ctx.textAlign = 'right';
@@ -358,13 +358,10 @@ function draw() {
         ctx.fillText(`Name`, lx + r, ly);
         ctx.fillText(`Score`, lx + r * 2, ly);
         
-        // 1. 排序：分數高到低
-        
         let currentRank = 1;
         let lastScore = null;
         let mySnakeWithRank = null;
         
-        // 2. 遍歷一次以計算所有名次，並找到自己的蛇和名次
         const rankedSnakes = [];
         for (let i = 0; i < sortedSnakes.length; i++) {
             const s = sortedSnakes[i];
@@ -373,7 +370,6 @@ function draw() {
                 currentRank = i + 1;
             }
             
-            // 將名次資訊添加到物件中
             const snakeWithRank = { ...s, rank: currentRank };
             rankedSnakes.push(snakeWithRank);
 
@@ -384,25 +380,16 @@ function draw() {
             lastScore = s.score;
         }
         
-        // 3. 創建最終的顯示列表 (Top 10 + 自己的蛇)
-        let displayList = rankedSnakes.slice(0, 10); // 取 Top 10
-        
-        // 檢查自己的蛇是否已經在 Top 10 內
+        let displayList = rankedSnakes.slice(0, 10);
         const isMySnakeInTop10 = displayList.some(s => s.id === my_id);
         
         if (mySnakeWithRank && !isMySnakeInTop10) {
-            // 如果自己不在 Top 10，將自己加入到列表的最後一位
-            
-
             displayList.push(mySnakeWithRank);
         }
-
-        // 4. 繪製最終列表
         for (let i = 0; i < displayList.length; i++) {
             const s = displayList[i];
             const yOffset = (i + 1) * 40 + ly;
             
-            // highlight myself
             if (s.id === my_id) { 
                 ctx.save();
                 ctx.fillStyle = "#3aa8";
@@ -418,13 +405,12 @@ function draw() {
     }
 
     const totalPlayers = client_snakes.length;
-    let myRank = 'N/A'; // 預設名次
+    let myRank = 'N/A';
     let lastScore = null;
     let currentRank = 1;
     for (let i = 0; i < totalPlayers; i++) {
         const s = sortedSnakes[i];
         
-        // 計算名次 (處理同分)
         if (s.score !== lastScore) {
             currentRank = i + 1;
         }

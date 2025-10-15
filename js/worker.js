@@ -59,12 +59,9 @@ function processGameState(state) {
     for (const s of state.snakes) {
         let snake;
 
-        // 復用/創建邏輯
         if (worker_snakes_map.has(s.id)) {
-            // 復用：取得現有實例並更新屬性
             snake = worker_snakes_map.get(s.id);
             
-            // 更新屬性 (只更新狀態)
             snake.r=s.r;
             snake.x = s.x;
             snake.y = s.y;
@@ -92,11 +89,9 @@ function processGameState(state) {
                 b.pop();
             }
         } else {
-            // 創建：如果不存在，則創建新實例
             snake = new Snake(
                 s.x, s.y, s.dx, s.dy, s.clr, s.type, s.name
             );
-            // 設置其他屬性
             snake.r=s.r;
             snake.id = s.id;
             snake.score = s.score;
@@ -108,13 +103,11 @@ function processGameState(state) {
         next_snakes_map.set(s.id, snake);
         active_snakes_array.push(snake);
     }
-    // 更新 Worker 中的 Map，釋放不需要的舊實例
     worker_snakes_map = next_snakes_map;
 
     //food
     const worker_foods = state.foods.map(f => new Food(f.x, f.y, f.type, f.dt));
 
-    // 4. 返回數據給主執行緒
     return {
         snakes: active_snakes_array,
         foods: worker_foods,
@@ -123,7 +116,6 @@ function processGameState(state) {
     };
 }
 
-// 4. 監聽主執行緒的訊息
 self.onmessage = function(e) {
     const message = e.data;
     

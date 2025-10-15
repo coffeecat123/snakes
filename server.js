@@ -29,7 +29,7 @@ function getLocalIP() {
   return '127.0.0.1';
 }
 
-var rr = 30; // 蛇的基礎半徑
+var rr = 30; // snake radius
 var map = { width: 3000, height: 3000 };
 var snakes = {}; // id
 var foods = [];
@@ -415,7 +415,7 @@ function start_game(w = 3000, h = 3000) {
     snakes = {};
     foods = [];
 
-    // 初始化 AI 蛇
+    // ai snake
     for (let i = 0; i < 10; i++) {
         const k = 1.1;
         let t = Math.ceil(Math.log(1 + Math.random() * (k ** 8 - 1)) / Math.log(k) + 1);
@@ -429,7 +429,7 @@ function start_game(w = 3000, h = 3000) {
         snakes[id].id=generateRandomUsername(16);
     }
 
-    // 初始化食物
+    // food
     for (let i = 0; i < w * h / 1000000 * 3; i++) {
         foods.push(new Food(random(rr, map.width - rr), random(rr, map.height - rr), 0,
             { clr: '#555555', r: rr * 1.3, text: ['🍎', 'X'], to: { x: random(rr, map.width - rr), y: random(rr, map.height - rr) } }));
@@ -487,7 +487,7 @@ function move() {
                 dx: s.dx, 
                 dy: s.dy,
                 
-                body: [s.body[0]],// 只傳輸頭部位置，減少數據量
+                body: [s.body[0]],//only send head
                 r: s.r,
                 clr: s.clr,
                 name: s.name,
@@ -524,7 +524,7 @@ io.on('connection', (socket) => {
         socket.emit('start', { id: id, map: map, rr: rr });
     });
     socket.on('ping', () => {
-        socket.emit('pong'); // 立即返回 pong 响应
+        socket.emit('pong');
     });
     socket.on('playerInput', (data) => {
         const snake = snakes[socket.id];
