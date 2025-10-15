@@ -409,9 +409,8 @@ class Food {
     }
 }
 
-function start_game(w = 3000, h = 3000) {
-    map.width = w;
-    map.height = h;
+function start_game() {
+    let w = map.width, h = map.height;
     snakes = {};
     foods = [];
 
