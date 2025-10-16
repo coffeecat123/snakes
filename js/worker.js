@@ -92,6 +92,8 @@ function processGameState(state) {
             snake = new Snake(
                 s.x, s.y, s.dx, s.dy, s.clr, s.type, s.name
             );
+            snake.x=s.x;
+            snake.y=s.y;
             snake.r=s.r;
             snake.id = s.id;
             snake.score = s.score;

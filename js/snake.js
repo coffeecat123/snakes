@@ -15,7 +15,7 @@ const gameWorker = new Worker('worker.js');
 
 var buttons = [];
 
-var lastTime, frameCount, fps = 60;
+var lastTime, frameCount=0, fps = 60;
 const margin = 50;
 const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
 var keys = { w: 0, a: 0, s: 0, d: 0, shift: 0 };
