@@ -1,9 +1,13 @@
 const socket = io();
-var my_id = null;
+var my_id = null, my_snake = null;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 var cvs = $("#cvs");
+var ipt_name =  $("#ipt_name");
+var instruction =  $("#instruction");
+var name_div =  $("#name_div");
+var enter_name_btn =  $("#enter_name_btn");
 var ctx = cvs.getContext("2d");
 var ti;
 var rr;
@@ -28,6 +32,7 @@ var showRank = 0, showFps = 0,updating=0;
 gameWorker.onmessage = function(e) {
     const data = e.data;
     client_snakes = data.snakes;
+    my_snake = client_snakes.find(s => s.id === my_id);
     client_foods = data.foods;
     map = data.map;
     rr = data.rr;
@@ -258,10 +263,16 @@ function draw() {
     
     //draw snakes
     for (let i = 0; i < s.length; i++) {
+        if(s[i].id===my_id) continue;
         drawSnakeBody(s[i]);
     }
     for (let i = s.length - 1; i >= 0; i--) {
+        if(s[i].id===my_id) continue;
         drawSnakeHead(s[i]);
+    }
+    if (my_snake) {
+        drawSnakeBody(my_snake);
+        drawSnakeHead(my_snake);
     }
     
     const mySnake = client_snakes.find(s => s.id === my_id);
@@ -417,15 +428,15 @@ function draw() {
     //draw fps
     if (showFps) {
         let text = `fps:${fps}`;
-        ctx.font = '40px Arial';
+        ctx.font = '20px Arial';
         ctx.fillStyle = '#0f0';
         ctx.textAlign = 'right';
         let x = cvs.width - 10;
-        let y = 40;
+        let y = 50;
         ctx.fillText(text, x, y);
     }
 
-    fillText(`ping:${ping}ms`, cvs.width-85, 150, addOpacity("#0ff", 1), 0);
+    fillText(`${ping}ms`, cvs.width-45, 20, addOpacity("#0ff", 1), 0,`${20}px Arial`);
     ctx.restore();
 }
 function bk() {
@@ -480,9 +491,8 @@ function player_input() {
     socket.emit('playerInput', { dx: dx, dy: dy});
 }
 function updateCamera() {
-    let mySnake = client_snakes.find(s => s.id == my_id);
-    if(!mySnake) return;
-    let head ={x:mySnake.x,y:mySnake.y};
+    if(my_snake==null) return;
+    let head ={x:my_snake.x,y:my_snake.y};
     if (!head) return;
     let targetX = head.x + rr - camera.width / 2;
     let targetY = head.y + rr - camera.height / 2;
@@ -629,9 +639,33 @@ setInterval(() => {
 }, 1000);
 //connect
 socket.on('connect', () => {
-    let name=prompt("Enter your name:", "Player");
-    if(name==null || name.trim()=="") name="Player";
-    socket.emit('setName', { name: name  });
+    let num = Math.floor(Math.random() * 1000); // 0~999
+    let str = num.toString().padStart(3, '0');
+    const p=`Player${str}`;
+    ipt_name.value=p;
+    ipt_name.placeholder="enter your name";
+    ipt_name.focus();
+    instruction.innerText="Use WASD or Arrow Keys to move\nHold Shift to speed up\nOn mobile, use joystick and banana button";
+    let f1,f2;
+    ipt_name.addEventListener('keydown',f1=(e) => {
+        if (e.key === 'Enter') {
+            let name=ipt_name.value;
+            if(name==null || name.trim()=="") name=p;
+            name_div.style.display="none";
+            socket.emit('setName', { name: name  });
+            ipt_name.removeEventListener('keydown',f1);
+            enter_name_btn.removeEventListener('click',f2);
+        }
+    });
+    enter_name_btn.addEventListener('click',f2=(e) => {
+        let name=ipt_name.value;
+        if(name==null || name.trim()=="") name=p;
+        name_div.style.display="none";
+        socket.emit('setName', { name: name  });
+        ipt_name.removeEventListener('keydown',f1);
+        enter_name_btn.removeEventListener('click',f2);
+        
+    });
 });
 //start
 socket.on('start', (data) => {
@@ -639,7 +673,6 @@ socket.on('start', (data) => {
     setcvswh();
     bindCamera(ctx, camera);
     initButtons();
-    disableMobileScrolling();
     lastTime = Date.now();
     gameWorker.postMessage({ type: 'init', rr: rr ,my_id: my_id});
     requestAnimationFrame(update);
@@ -649,3 +682,4 @@ socket.on('gameState', (state) => {
     //to worker
     gameWorker.postMessage({ type: 'game_state', state: state });
 });
+disableMobileScrolling();

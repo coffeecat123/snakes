@@ -24,6 +24,28 @@ body{
     display: flex;
     align-items: flex-start;
 }
+div#name_div {
+    top: 0;
+    left: 0;
+    position: fixed;
+    width: 100vw;
+    height: 100vh;
+}
+input#ipt_name {
+    font-size: min(5vw,5vh);
+    background: #888;
+    color: #eee;
+}
+#enter_name_btn{
+    background: #eee;
+    color: #000;
+    border: none;
+    border-radius: 20px;
+}
+#enter_name_btn:hover{
+    background: #ccc;
+    cursor: pointer;
+}
 ::-webkit-scrollbar-corner {
     background:#181818;
 }
@@ -52,6 +74,23 @@ body{
     <body>
         <div id="wl">
             <canvas id="cvs"></canvas>
+        </div>
+        <div id="name_div">
+            <span style="
+                font-size: min(10vw,10vh);
+                color:#eee;
+            ">Name</span>
+            <br>
+            <input id="ipt_name" type="text" maxlength="20"/>
+            <button id="enter_name_btn" 
+                style="
+                    font-size: min(5vw,5vh);
+                    margin-top: 2vh;
+                "
+            >Enter</button>
+            <pre id="instruction" style="
+                font-size: min(5vw,5vh);
+                color:#eee;"></pre>
         </div>
         <script src="/socket.io/socket.io.js"></script>
         <script src="/snake.js"></script>
