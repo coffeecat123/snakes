@@ -157,17 +157,6 @@ function drawSnakeBody(s) {
     }
 }
 function drawFood(f) {
-    const VIEW_LEFT = camera.x;
-    const VIEW_RIGHT = camera.x + camera.width;
-    const VIEW_TOP = camera.y;
-    const VIEW_BOTTOM = camera.y + camera.height;
-    
-    const food_r = f.dt.r || rr; 
-    
-    if (f.x + food_r < VIEW_LEFT || f.x - food_r > VIEW_RIGHT || 
-        f.y + food_r < VIEW_TOP || f.y - food_r > VIEW_BOTTOM) {
-        return;
-    }
     if (f.type == 0) {
         ctx.fillStyle = f.dt.clr;
         ctx.beginPath();

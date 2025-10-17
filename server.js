@@ -13,20 +13,24 @@ app.get('/', (req, res) => {
 });
 const PORT = 3000;
 server.listen(PORT, () => {
-  console.log(`link: http://${getLocalIP()}:${PORT}`);
+    let all_ip=getAllIP();
+    for(let i =0;i<all_ip.length;i++){
+        console.log(`link: http://${all_ip[i]}:${PORT}`);
+    }
 });
-function getLocalIP() {
+function getAllIP() {
   const os = require('os');
   const interfaces = os.networkInterfaces();
+  var address=['localhost'];
   for (const devName in interfaces) {
     const iface = interfaces[devName];
     for (const alias of iface) {
       if (alias.family === 'IPv4' && !alias.internal) {
-        return alias.address;
+        address.push(alias.address);
       }
     }
   }
-  return '127.0.0.1';
+  return address;
 }
 
 var rr = 30; // snake radius
