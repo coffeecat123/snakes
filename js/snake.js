@@ -20,7 +20,7 @@ const gameWorker = new Worker('worker.js');
 var buttons = [];
 
 var lastTime, frameCount=0, fps = 60;
-const margin = 50;
+const margin = 100;
 const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
 var keys = { w: 0, a: 0, s: 0, d: 0, shift: 0 };
 var camera = { x: 0, y: 0, width: 0, height: 0 };
@@ -492,12 +492,15 @@ function player_input() {
 }
 function updateCamera() {
     if(my_snake==null) return;
-    let head ={x:my_snake.x,y:my_snake.y};
-    if (!head) return;
-    let targetX = head.x + rr - camera.width / 2;
-    let targetY = head.y + rr - camera.height / 2;
-    camera.x = Math.max(-margin, Math.min(targetX, map.width - camera.width + margin));
-    camera.y = Math.max(-margin, Math.min(targetY, map.height - camera.height + margin));
+    if (my_snake.x==undefined || my_snake.y==undefined) return;
+    let targetX = my_snake.x + rr - camera.width / 2;
+    let targetY = my_snake.y + rr - camera.height / 2;
+    let dx=Math.max(-margin, Math.min(targetX, map.width - camera.width + margin))-camera.x;
+    let dy=Math.max(-margin, Math.min(targetY, map.height - camera.height + margin))-camera.y;
+    let lerpFactor = 6/(fps||1);
+    camera.x+=dx*lerpFactor;
+    camera.y+=dy*lerpFactor;
+
     if (map.width < camera.width) camera.x = -(camera.width - map.width) / 2;
     if (map.height < camera.height) camera.y = -(camera.height - map.height) / 2;
 }
