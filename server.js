@@ -527,7 +527,7 @@ io.on('connection', (socket) => {
         socket.emit('start', { id: id, map: map, rr: rr });
     });
     socket.on('ping', () => {
-        socket.emit('pong');
+        socket.emit('pong',{ now: Date.now()});
     });
     socket.on('playerInput', (data) => {
         const snake = snakes[socket.id];

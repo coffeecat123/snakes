@@ -11,7 +11,7 @@ var enter_name_btn =  $("#enter_name_btn");
 var ctx = cvs.getContext("2d");
 var ti;
 var rr;
-var ping = null;
+var ping = null,offset=0;
 var map = { width: 0, height: 0 };
 var client_snakes = [];
 var client_foods = [];
@@ -111,7 +111,7 @@ function drawSnakeHead(s) {
     ctx.arc(b.x, b.y, r, 0, 2 * Math.PI);
     ctx.fill();
 
-    if (Date.now() - s.err[1].lastTime < s.err[1].waitTime) {
+    if (Date.now()+offset - s.err[1].lastTime < s.err[1].waitTime) {
         fillText('?', b.x, b.y, "#fff", 1, `${s.r}px Arial`);
     }
     else {
@@ -120,8 +120,13 @@ function drawSnakeHead(s) {
     fillText(s.name, b.x, b.y - s.r * 1.5, "#fff", 1, `${s.r / 1.5}px Arial`);
     for (let i = 0; i < s.chscs.length; i++) {
         let c = s.chscs[i];
-        if (Date.now() - c.lastTime < c.waitTime) {
-            fillText(c.txt, s.body[0].x, s.body[0].y - s.r * 1.5 - s.r * 2 * (Date.now() - c.lastTime) / c.waitTime, addOpacity(hslToHex((540 - i * 34) % 360, 100, 50), 1 - (Date.now() - c.lastTime) / c.waitTime), 1, `${s.r / 1.5}px Arial`);
+        if (Date.now()+offset - c.lastTime < c.waitTime) {
+            fillText(c.txt,
+                s.body[0].x,
+                s.body[0].y - s.r * 1.5 - s.r * 2 * (Date.now()+offset - c.lastTime) / c.waitTime,
+                `hsla(${(540 - i * 34) % 360}, 100%, 50%, ${1 - (Date.now()+offset - c.lastTime) / c.waitTime})`,
+                1,
+                `${s.r / 1.5}px Arial`);
         } else {
             s.chscs.splice(i--, 1);
         }
@@ -505,7 +510,7 @@ function updateCamera() {
     if (map.height < camera.height) camera.y = -(camera.height - map.height) / 2;
 }
 function updateFps() {
-    let time = Date.now();
+    let time = performance.now();
     if (lastTime) {
         const deltaTime = time - lastTime; frameCount++;
         if (deltaTime > 100) { fps = Math.round(frameCount * 1000 / deltaTime); frameCount = 0; lastTime = time; }
@@ -554,10 +559,10 @@ function initButtons() {
 //event
 window.addEventListener('resize', setcvswh);
 document.onkeydown = (e) => {
-    if (e.key == 'ArrowUp' || e.key == 'w' || e.key == 'W') keys.w = Date.now();
-    if (e.key == 'ArrowLeft' || e.key == 'a' || e.key == 'A') keys.a = Date.now();
-    if (e.key == 'ArrowDown' || e.key == 's' || e.key == 'S') keys.s = Date.now();
-    if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = Date.now();
+    if (e.key == 'ArrowUp' || e.key == 'w' || e.key == 'W') keys.w = performance.now();
+    if (e.key == 'ArrowLeft' || e.key == 'a' || e.key == 'A') keys.a = performance.now();
+    if (e.key == 'ArrowDown' || e.key == 's' || e.key == 'S') keys.s = performance.now();
+    if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = performance.now();
     if (e.key == 'Shift') keys.shift = 1;
     if (e.key == 'q' || e.key == 'Q') showRank = 1; 
 }
@@ -633,11 +638,13 @@ cvs.addEventListener('pointerup', (e) => {
 
 //ping
 let lastPingTime = 0;
-socket.on('pong', () => {
-  ping = Date.now() - lastPingTime;
+socket.on('pong', (data) => {
+  offset=data.now-Date.now();
+  ping = performance.now() - lastPingTime;
+  ping = Math.round(ping);
 });
 setInterval(() => {
-  lastPingTime = Date.now();
+  lastPingTime = performance.now();
   socket.emit('ping');
 }, 1000);
 //connect
@@ -676,7 +683,7 @@ socket.on('start', (data) => {
     setcvswh();
     bindCamera(ctx, camera);
     initButtons();
-    lastTime = Date.now();
+    lastTime = performance.now();
     gameWorker.postMessage({ type: 'init', rr: rr ,my_id: my_id});
     requestAnimationFrame(update);
 });
