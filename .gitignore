@@ -1,0 +1,19 @@
+# 依賴模組
+node_modules/
+
+# 鎖定檔案
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# 系統與編輯器暫存檔
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 環境變數與日誌
+.env
+*.log
