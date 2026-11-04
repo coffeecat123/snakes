@@ -5,6 +5,8 @@ const { Server } = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+var tickCount = 0;
+const NETWORK_DIVIDER = 2;
 
 app.use(express.static('js'));
 
@@ -13,28 +15,28 @@ app.get('/', (req, res) => {
 });
 const PORT = 3000;
 server.listen(PORT, () => {
-    let all_ip=getAllIP();
-    for(let i =0;i<all_ip.length;i++){
+    let all_ip = getAllIP();
+    for (let i = 0; i < all_ip.length; i++) {
         console.log(`link: http://${all_ip[i]}:${PORT}`);
     }
 });
 function getAllIP() {
-  const os = require('os');
-  const interfaces = os.networkInterfaces();
-  var address=['localhost'];
-  for (const devName in interfaces) {
-    const iface = interfaces[devName];
-    for (const alias of iface) {
-      if (alias.family === 'IPv4' && !alias.internal) {
-        address.push(alias.address);
-      }
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    var address = ['localhost'];
+    for (const devName in interfaces) {
+        const iface = interfaces[devName];
+        for (const alias of iface) {
+            if (alias.family === 'IPv4' && !alias.internal) {
+                address.push(alias.address);
+            }
+        }
     }
-  }
-  return address;
+    return address;
 }
 
 var rr = 30; // snake radius
-var map = { width: 3000, height: 3000 };
+var map = { width: 2000, height: 2000 };
 var snakes = {}; // id
 var foods = [];
 var fps = 60;
@@ -188,7 +190,7 @@ class Snake {
         else if (b.length > 1) {
             b.pop();
         }
-        if(this.score<=0&&b.length > 1){
+        if (this.score <= 0 && b.length > 1) {
             b.splice(1);
         }
         let g = (x) => {
@@ -273,7 +275,7 @@ class Snake {
                 dx /= distance;
                 dy /= distance;
             }
-            let speed =400;
+            let speed = 400;
             this.dx = dx * speed;
             this.dy = dy * speed;
             if (closeM) {
@@ -317,7 +319,7 @@ class Snake {
                         let u = { ...this.body[0] };
                         let d1 = Math.hypot((u.x + this.dx) - closestFood.x, (u.y + this.dy) - closestFood.y);
                         let d2 = Math.hypot((u.x) - closestFood.x, (u.y) - closestFood.y);
-                        if (d1 > d2&&(ddx!=0||ddy!=0)) {
+                        if (d1 > d2 && (ddx != 0 || ddy != 0)) {
                             this.dx = 0;
                             this.dy = 0;
                             let c = { ...closeM };
@@ -424,12 +426,12 @@ function start_game() {
         let t = Math.ceil(Math.log(1 + Math.random() * (k ** 8 - 1)) / Math.log(k) + 1);
         if (Math.random() * 100 < 5) t = 1;
         let name = generateRandomUsername(random(4, 8));
-        let id=`ai_${i}`;
+        let id = `ai_${i}`;
         snakes[id] = new Snake(
             random(0, map.width), random(0, map.height),
             random(-200, 200), random(-200, 200),
             getRandomColor(), t, name);
-        snakes[id].id=generateRandomUsername(16);
+        snakes[id].id = id;
     }
 
     // food
@@ -445,23 +447,28 @@ function start_game() {
         foods.push(new Food(random(rr, map.width - rr), random(rr, map.height - rr), 2,
             { clr: '#555555', r: rr * 1.3, text: ['🍇', 'X'], v: { dx: 0, dy: 0 }, last_snake: -1 }));
     }
-    setInterval(move, 1000 / fps);
+
+    // 關鍵修正：只用一個 setInterval，確保物理與廣播 100% 同步，絕不產生時間差抖動！
+    setInterval(() => {
+        updatePhysics();
+        tickCount++;
+        if (tickCount % NETWORK_DIVIDER === 0) {
+            broadcastGameState();
+        }
+    }, 1000 / fps);
 }
-function move() {
+
+function updatePhysics() {
     let g = (x) => {
         if (x >= 100) return Math.log10(x);
         return x / 100 + 1;
     };
-    const activeSnakes = Object.values(snakes); 
+    const activeSnakes = Object.values(snakes);
     for (const s of activeSnakes) {
         s.r = rr * g(s.score) ** 0.5;
         s.move();
     }
-    if (foods.map((f) => {
-        return f.type;
-    }).reduce((s, m) => {
-        return s + (m == 3);
-    }, 0) < 3) {
+    if (foods.map((f) => f.type).reduce((s, m) => s + (m == 3), 0) < 3) {
         if (random(0, 800 * 60 / fps) < 2) {
             foods.push(new Food(random(rr, map.width - rr), random(rr, map.height - rr), 3,
                 {
@@ -471,10 +478,12 @@ function move() {
         }
     }
     for (let i = 0; i < foods.length; i++) {
-        let f = foods[i];
-        f.do();
+        foods[i].do();
     }
-    
+}
+
+function broadcastGameState() {
+    const netFps = fps / NETWORK_DIVIDER;
     const state = {
         snakes: Object.values(snakes).map(s => {
             for (let i = 0; i < s.chscs.length; i++) {
@@ -485,13 +494,12 @@ function move() {
             }
             return {
                 id: s.id,
-                x: s.body[0].x,
-                y: s.body[0].y,
-                dx: s.dx, 
-                dy: s.dy,
-                
-                body: [s.body[0]],//only send head
-                r: s.r,
+                x: Math.round(s.body[0].x * 10) / 10,
+                y: Math.round(s.body[0].y * 10) / 10,
+                dx: Math.round(s.dx),
+                dy: Math.round(s.dy),
+                body: [s.body[0]],
+                r: Math.round(s.r * 10) / 10,
                 clr: s.clr,
                 name: s.name,
                 score: s.score,
@@ -501,16 +509,23 @@ function move() {
             };
         }),
         foods: foods.map(f => ({
-            x: f.x,
-            y: f.y,
+            x: Math.round(f.x * 10) / 10,
+            y: Math.round(f.y * 10) / 10,
             type: f.type,
-            dt: { r: f.dt.r, text: f.dt.text, clr: f.dt.clr, to: f.type === 0 ? {x:Math.round(f.dt.to.x*10)/10,y:Math.round(f.dt.to.y*10)/10} : undefined }
+            // ★ 關鍵：蘑菇與葡萄附帶速度向量，供客戶端進行 120Hz 連續物理模擬！
+            v: (f.type === 1 || f.type === 2) && f.dt.v ? { dx: Math.round(f.dt.v.dx), dy: Math.round(f.dt.v.dy) } : undefined,
+            dt: {
+                r: f.dt.r,
+                text: f.dt.text,
+                clr: f.dt.clr,
+                to: f.type === 0 ? { x: Math.round(f.dt.to.x), y: Math.round(f.dt.to.y) } : undefined
+            }
         })),
         map: map,
         rr: rr,
-        fps: fps
+        fps: netFps
     };
-    
+
     io.sockets.emit('gameState', state);
 }
 
@@ -518,16 +533,16 @@ io.on('connection', (socket) => {
     console.log(`in: ${socket.id}, ${Object.keys(snakes).length}`);
     socket.on('setName', (data) => {
         const newSnake = new Snake(
-            random(0, map.width), random(0, map.height), 0, 0, 
+            random(0, map.width), random(0, map.height), 0, 0,
             getRandomColor(), 0, data.name);
-        let id=socket.id;
+        let id = socket.id;
         newSnake.id = id;
         snakes[id] = newSnake;
 
         socket.emit('start', { id: id, map: map, rr: rr });
     });
     socket.on('ping', () => {
-        socket.emit('pong',{ now: Date.now()});
+        socket.emit('pong', { now: Date.now() });
     });
     socket.on('playerInput', (data) => {
         const snake = snakes[socket.id];
@@ -536,10 +551,10 @@ io.on('connection', (socket) => {
             snake.dy = data.dy;
         }
     });
-    
+
     socket.on('disconnect', () => {
         console.log(`out: ${socket.id}, ${Object.keys(snakes).length}`);
-        delete snakes[socket.id]; 
+        delete snakes[socket.id];
     });
 });
 start_game();

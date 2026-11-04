@@ -13,31 +13,226 @@ var ti;
 var rr;
 var ping = null, offset = 0;
 var map = { width: 0, height: 0 };
+
 var client_snakes = [];
+var client_snakes_map = new Map();
 var client_foods = [];
-const gameWorker = new Worker('worker.js');
 
 var buttons = [];
 
+var lastSentInput = { dx: 0, dy: 0, time: 0 };
 var lastTime, frameCount = 0, fps = 60;
+var lastFrameTime = performance.now();
+
 const margin = 100;
 const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
 var keys = { w: 0, a: 0, s: 0, d: 0, shift: 0 };
-var camera = { x: 0, y: 0, width: 0, height: 0 };
+var camera = { x: 0, y: 0, width: 0, height: 0, inited: false };
 var joystick = { x: 0, y: 0, default_x: 0, default_y: 0, active: 0, id: -1, sx: 0, sy: 0, r: 85 };
 var add_speed = { x: 0, y: 0, default_x: 0, default_y: 0, id: -1, r: 85 - 5, active: 0 };
 
-var showRank = 0, showFps = 0, updating = 0;
+var showRank = 0, showFps = 0;
 
-gameWorker.onmessage = function (e) {
-    const data = e.data;
-    client_snakes = data.snakes;
-    my_snake = client_snakes.find(s => s.id === my_id);
-    client_foods = data.foods;
-    map = data.map;
-    rr = data.rr;
-    updating = 1;
-};
+// 直接接收伺服器狀態（繞過 Worker，徹底根除執行緒延遲造成的微抖動）
+socket.on('gameState', (state) => {
+    map = state.map;
+    rr = state.rr;
+
+    const currentServerIds = new Set();
+
+    for (const s of state.snakes) {
+        currentServerIds.add(s.id);
+        let localSnake = client_snakes_map.get(s.id);
+
+        if (!localSnake) {
+            // 新加入的蛇
+            localSnake = {
+                id: s.id,
+                x: s.x,
+                y: s.y,
+                targetX: s.x,
+                targetY: s.y,
+                serverX: s.x,  // 校對點
+                serverY: s.y,
+                dx: s.dx,
+                dy: s.dy,
+                r: s.r,
+                clr: s.clr,
+                name: s.name,
+                score: s.score,
+                chscs: s.chscs,
+                err: s.err,
+                type: s.type,
+                body: [{ x: s.x, y: s.y }]
+            };
+            client_snakes_map.set(s.id, localSnake);
+        } else {
+            // 1. 吃到傳送蘋果的大距離瞬移直接重置，不拉扯 (比對本地實際位置與伺服器位置)
+            if (Math.hypot(s.x - localSnake.x, s.y - localSnake.y) > 150) {
+                localSnake.x = s.x;
+                localSnake.y = s.y;
+                localSnake.body = [{ x: s.x, y: s.y }];
+            }
+
+            // 2. ★ 核心關鍵分流：
+            if (s.id === my_id) {
+                // 【自己的蛇】：只記錄伺服器位置作為背景校準點，絕不覆蓋自己的 dx/dy！
+                localSnake.serverX = s.x;
+                localSnake.serverY = s.y;
+            } else {
+                // 【別人的蛇 / AI】：更新目標座標與速度，供本地平滑追趕
+                localSnake.targetX = s.x;
+                localSnake.targetY = s.y;
+                localSnake.dx = s.dx;
+                localSnake.dy = s.dy;
+            }
+
+            // 3. 權威屬性同步（半徑、分數、名字、異常狀態、飄字）
+            localSnake.r = s.r;
+            localSnake.score = s.score;
+            localSnake.name = s.name;
+            localSnake.clr = s.clr;
+            localSnake.chscs = s.chscs;
+            localSnake.err = s.err;
+            localSnake.type = s.type;
+        }
+    }
+
+    // 清理已斷線的蛇
+    for (const [id] of client_snakes_map) {
+        if (!currentServerIds.has(id)) {
+            client_snakes_map.delete(id);
+        }
+    }
+
+    client_snakes = Array.from(client_snakes_map.values());
+    my_snake = client_snakes_map.get(my_id) || null;
+
+    // 食物狀態更新 (蘋果與禮物瞬移定位，其他平滑)
+    if (client_foods.length !== state.foods.length) {
+        client_foods = state.foods.map(f => ({
+            ...f,
+            targetX: f.x,
+            targetY: f.y,
+            vx: f.v ? f.v.dx : 0,
+            vy: f.v ? f.v.dy : 0
+        }));
+    } else {
+        for (let i = 0; i < state.foods.length; i++) {
+            const sf = state.foods[i];
+            const cf = client_foods[i];
+
+            if (sf.type === 0 || sf.type === 3 || Math.hypot(sf.x - cf.x, sf.y - cf.y) > 150) {
+                cf.x = sf.x;
+                cf.y = sf.y;
+            }
+            cf.targetX = sf.x;
+            cf.targetY = sf.y;
+            cf.type = sf.type;
+            cf.dt = sf.dt;
+            // 同步速度
+            if (sf.v) {
+                cf.vx = sf.v.dx;
+                cf.vy = sf.v.dy;
+            }
+        }
+    }
+});
+
+// 120Hz 每幀高精確流體平滑推移
+function updateSmoothEntities(dt) {
+    const smoothFactor = 1 - Math.exp(-22 * dt);
+
+    for (const s of client_snakes) {
+        if (s.id === my_id) {
+            // ==========================================
+            // 1. 本地玩家模擬 (支援蘑菇混亂反向負面狀態！)
+            // ==========================================
+            let moveDx = s.dx;
+            let moveDy = s.dy;
+
+            // ★ 關鍵：檢查是否處於蘑菇負面狀態（err[1] 混亂期間速度反轉）
+            const isReversed = s.err && s.err[1] && (Date.now() + offset - s.err[1].lastTime < s.err[1].waitTime);
+            if (isReversed) {
+                moveDx *= -1;
+                moveDy *= -1;
+            }
+
+            s.x += moveDx * dt;
+            s.y += moveDy * dt;
+            s.x = Math.max(s.r, Math.min(s.x, map.width - s.r));
+            s.y = Math.max(s.r, Math.min(s.y, map.height - s.r));
+
+            // 背景輕微吸收與伺服器的微小誤差 (Reconciliation)
+            if (s.serverX !== undefined) {
+                s.x += (s.serverX - s.x) * (1 - Math.exp(-5 * dt));
+                s.y += (s.serverY - s.y) * (1 - Math.exp(-5 * dt));
+            }
+        } else {
+            // 別人的蛇：平滑追隨
+            s.x += (s.targetX - s.x) * smoothFactor;
+            s.y += (s.targetY - s.y) * smoothFactor;
+        }
+
+        // 2. 鋪設身體軌跡與停駐消散
+        if (!s.body || s.body.length === 0) {
+            s.body = [{ x: s.x, y: s.y }];
+        }
+
+        const head = s.body[0];
+        const dist = Math.hypot(s.x - head.x, s.y - head.y);
+
+        const g = (x) => (x + 1) / 20 + Math.log10(x + 1) / Math.log10(100);
+        let maxNodes = Math.max(1, Math.floor(60 * g(s.score) * 1.8));
+        if (s.score <= 0) maxNodes = 1;
+
+        if (dist >= 4) {
+            s.body.unshift({ x: s.x, y: s.y });
+            s.shrinkTimer = 0;
+            while (s.body.length > maxNodes) {
+                s.body.pop();
+            }
+        } else if (s.body.length > 1) {
+            s.shrinkTimer = (s.shrinkTimer || 0) + dt;
+            const shrinkInterval = 1 / 50;
+            while (s.shrinkTimer >= shrinkInterval && s.body.length > 1) {
+                s.body.pop();
+                s.shrinkTimer -= shrinkInterval;
+            }
+        } else {
+            s.shrinkTimer = 0;
+        }
+    }
+
+    // ==========================================
+    // 3. 葡萄與蘑菇：120Hz 連續物理飛行與彈力碰撞模擬
+    // ==========================================
+    for (const f of client_foods) {
+        if ((f.type === 1 || f.type === 2) && f.vx !== undefined) {
+            // (1) 依照速度在本地以 120 FPS 連續飛行
+            f.x += f.vx * dt;
+            f.y += f.vy * dt;
+
+            // (2) 本地撞牆即時反彈，絕不卡在牆角
+            let fr = f.dt ? f.dt.r : 30;
+            if (f.x < fr) { f.x = fr; f.vx *= -1; }
+            if (f.x > map.width - fr) { f.x = map.width - fr; f.vx *= -1; }
+            if (f.y < fr) { f.y = fr; f.vy *= -1; }
+            if (f.y > map.height - fr) { f.y = map.height - fr; f.vy *= -1; }
+
+            // (3) 與伺服器權威座標進行極溫和的平滑微調（吸收延遲誤差）
+            if (f.targetX !== undefined) {
+                f.x += (f.targetX - f.x) * (1 - Math.exp(-8 * dt));
+                f.y += (f.targetY - f.y) * (1 - Math.exp(-8 * dt));
+            }
+        } else if (f.targetX !== undefined) {
+            // 蘋果(0)與禮物(3)直接鎖定目標座標，絕不滑行
+            f.x = f.targetX;
+            f.y = f.targetY;
+        }
+    }
+}
+
 //class
 class Button {
     constructor(pausedShow, doAction) {
@@ -56,33 +251,22 @@ class Button {
                 case 'fill':
                     isInside = ctx.isPointInPath(shape.path, x, y);
                     break;
-
                 case 'stroke':
                     isInside = ctx.isPointInStroke(shape.path, x, y);
                     break;
-
                 case 'both':
                     isInside = ctx.isPointInPath(shape.path, x, y) || ctx.isPointInStroke(shape.path, x, y);
                     break;
-
                 default:
                     console.warn(`Unknown shape type: ${shape.type}`);
                     isInside = false;
                     break;
             }
-            if (isInside) {
-                return true;
-            }
+            if (isInside) return true;
         }
-
         return false;
-
     }
     addShape(path, color, hover, type = 'fill') {
-        //hover:-1 means any
-        //hover:0 means not hover
-        //hover:1 means hover
-        //type: fill, stroke, both
         this.shapes.push({ path: new Path2D(path), color, hover, type });
     }
     draw() {
@@ -101,29 +285,28 @@ class Button {
         }
     }
 }
+
 function drawSnakeHead(s) {
-    let b = { x: s.x, y: s.y };
     let alpha = 255;
     let r = s.r;
     alpha = alpha.toString(16).padStart(2, '0').toLowerCase();
     ctx.fillStyle = `${s.clr}${alpha}`;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, r, 0, 2 * Math.PI);
+    ctx.arc(s.x, s.y, r, 0, 2 * Math.PI);
     ctx.fill();
 
     if (Date.now() + offset - s.err[1].lastTime < s.err[1].waitTime) {
-        fillText('?', b.x, b.y, "#fff", `${s.r}px Arial`);
+        fillText('?', s.x, s.y, "#fff", `${s.r}px Arial`);
+    } else {
+        fillText(s.score, s.x, s.y, "#fff", `${s.r / 1.5}px Arial`);
     }
-    else {
-        fillText(s.score, b.x, b.y, "#fff", `${s.r / 1.5}px Arial`);
-    }
-    fillText(s.name, b.x, b.y - s.r * 1.5, "#fff", `${s.r / 1.5}px Arial`);
+    fillText(s.name, s.x, s.y - s.r * 1.5, "#fff", `${s.r / 1.5}px Arial`);
     for (let i = 0; i < s.chscs.length; i++) {
         let c = s.chscs[i];
         if (Date.now() + offset - c.lastTime < c.waitTime) {
             fillText(c.txt,
-                s.body[0].x,
-                s.body[0].y - s.r * 1.5 - s.r * 2 * (Date.now() + offset - c.lastTime) / c.waitTime,
+                s.x,
+                s.y - s.r * 1.5 - s.r * 2 * (Date.now() + offset - c.lastTime) / c.waitTime,
                 `hsla(${(540 - i * 34) % 360}, 100%, 50%, ${1 - (Date.now() + offset - c.lastTime) / c.waitTime})`,
                 `${s.r / 1.5}px Arial`);
         } else {
@@ -131,18 +314,22 @@ function drawSnakeHead(s) {
         }
     }
 }
+
 function drawSnakeBody(s) {
+    if (!s.body || s.body.length <= 1) return;
+
     const VIEW_LEFT = camera.x;
     const VIEW_RIGHT = camera.x + camera.width;
     const VIEW_TOP = camera.y;
     const VIEW_BOTTOM = camera.y + camera.height;
 
-    const baseStep = 1;
+    const baseStep = 2;
     const lengthFactor = Math.min(1, 50 / s.body.length) || 1;
     const scoreFactor = Math.sqrt(Math.log10(s.score + 10)) || 1;
     const DRAW_STEP = Math.max(baseStep, Math.floor(baseStep * lengthFactor * scoreFactor));
 
-    for (let i = 0; i < s.body.length; i++) {
+    // 從 i = 1 開始畫身體，與頭部分工明確
+    for (let i = 1; i < s.body.length; i++) {
         let x = s.body[i].x;
         let y = s.body[i].y;
         if (i % DRAW_STEP !== 0) continue;
@@ -165,6 +352,7 @@ function drawSnakeBody(s) {
         ctx.fill();
     }
 }
+
 function drawFood(f) {
     if (f.type == 0) {
         ctx.fillStyle = f.dt.clr;
@@ -183,12 +371,13 @@ function drawFood(f) {
         fillText(f.dt.text[0], f.x, f.y, "#ff0000");
     }
 }
+
 function disableMobileScrolling() {
     document.addEventListener('touchmove', (e) => {
         e.preventDefault();
     }, { passive: false });
 }
-//main functions
+
 function setcvswh() {
     let w = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
     let h = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
@@ -196,8 +385,7 @@ function setcvswh() {
     if (w > h) {
         cvs.width = w / h * v;
         cvs.height = v;
-    }
-    else {
+    } else {
         cvs.width = v;
         cvs.height = h / w * v;
     }
@@ -209,6 +397,7 @@ function setcvswh() {
     add_speed.default_x = cvs.width / 5 * 4;
     add_speed.default_y = cvs.height / 4 * 3;
 }
+
 function fillText(text, x, y, clr, font = `${rr * 1.3}px Arial`) {
     ctx.save();
     ctx.font = font;
@@ -218,13 +407,14 @@ function fillText(text, x, y, clr, font = `${rr * 1.3}px Arial`) {
     ctx.fillText(text, x, y);
     ctx.restore();
 }
+
 function draw() {
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
-    //draw grid
+
+    // 網格
     ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
     ctx.lineWidth = 1;
-
     for (let x = 0; x <= map.width; x += 50) {
         ctx.beginPath();
         ctx.moveTo(x, 0);
@@ -238,30 +428,22 @@ function draw() {
         ctx.stroke();
     }
 
-    //draw edge
+    // 邊界
     let lw = 10;
-    let gdt = ctx.createLinearGradient(0, 0, cvs.width, cvs.height);
+    let gdt = ctx.createLinearGradient(0, 0, map.width, map.height);
     gdt.addColorStop(1, "#f00");
     gdt.addColorStop(0, "#f0f");
     ctx.strokeStyle = gdt;
     ctx.lineWidth = lw;
-    ctx.beginPath();
-    ctx.moveTo(-lw / 2, -lw / 2);
-    ctx.lineTo(-lw / 2, map.height + lw / 2);
-    ctx.lineTo(map.width + lw / 2, map.height + lw / 2);
-    ctx.lineTo(map.width + lw / 2, -lw / 2);
-    ctx.lineTo(-lw / 2, -lw / 2);
-    ctx.closePath();
-    ctx.stroke();
+    ctx.strokeRect(-lw / 2, -lw / 2, map.width + lw, map.height + lw);
 
-    //draw foods
+    // 食物
     for (let i = 0; i < client_foods.length; i++) {
         drawFood(client_foods[i]);
     }
 
+    // 其他蛇
     const s = [...client_snakes].sort((a, b) => b.r - a.r);
-
-    //draw snakes
     for (let i = 0; i < s.length; i++) {
         if (s[i].id === my_id) continue;
         drawSnakeBody(s[i]);
@@ -270,6 +452,8 @@ function draw() {
         if (s[i].id === my_id) continue;
         drawSnakeHead(s[i]);
     }
+
+    // 自己的蛇 (最後畫，置頂)
     if (my_snake) {
         drawSnakeBody(my_snake);
         drawSnakeHead(my_snake);
@@ -277,7 +461,7 @@ function draw() {
 
     ctx.restore();
 
-    //joystick
+    // UI - 搖桿
     if (isMobile) {
         let j = joystick;
         ctx.beginPath();
@@ -309,10 +493,10 @@ function draw() {
         ctx.fill();
         ctx.stroke();
     }
-    //add_speed
+
+    // UI - 加速
     if (isMobile) {
         let d = add_speed;
-        ctx.beginPath();
         ctx.beginPath();
         ctx.strokeStyle = "#0005";
         ctx.fillStyle = addOpacity("#fff", 0.2 + d.active / 3);
@@ -330,25 +514,23 @@ function draw() {
     }
 
     ctx.lineWidth = 8;
-    //buttons
     for (let i = 0; i < buttons.length; i++) {
         buttons[i].draw();
     }
 
     fillText("flsc", 50, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3));
     fillText("fps", 130, 50, addOpacity("#0f0", 1 - buttons[1].hover / 3));
-    if (isMobile) {
-        fillText("rank", 210, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3));
+    if (isMobile && buttons[2]) {
+        fillText("rank", 210, 50, addOpacity("#0f0", 1 - buttons[2].hover / 3));
     }
 
+    // 排行榜
     const sortedSnakes = [...client_snakes].sort((a, b) => b.score - a.score);
-    // rank
     if (showRank) {
         let lx = cvs.width / 3 - 10;
         let ly = 130;
         let r = Math.min(200, cvs.width / 3);
 
-        // title
         ctx.font = '40px Arial';
         ctx.fillStyle = '#f00';
         ctx.textAlign = 'right';
@@ -363,18 +545,15 @@ function draw() {
         const rankedSnakes = [];
         for (let i = 0; i < sortedSnakes.length; i++) {
             const s = sortedSnakes[i];
-
             if (s.score !== lastScore) {
                 currentRank = i + 1;
             }
-
             const snakeWithRank = { ...s, rank: currentRank };
             rankedSnakes.push(snakeWithRank);
 
             if (s.id === my_id) {
                 mySnakeWithRank = snakeWithRank;
             }
-
             lastScore = s.score;
         }
 
@@ -408,34 +587,27 @@ function draw() {
     let currentRank = 1;
     for (let i = 0; i < totalPlayers; i++) {
         const s = sortedSnakes[i];
-
         if (s.score !== lastScore) {
             currentRank = i + 1;
         }
-
         if (s.id === my_id) {
             myRank = currentRank;
             break;
         }
-
         lastScore = s.score;
-
     }
     fillText(`${myRank}/${totalPlayers}`, cvs.width - 55, 80, addOpacity("#eee", 1));
 
-    //draw fps
     if (showFps) {
-        let text = `fps:${fps}`;
         ctx.font = '20px Arial';
         ctx.fillStyle = '#0f0';
         ctx.textAlign = 'right';
-        let x = cvs.width - 10;
-        let y = 50;
-        ctx.fillText(text, x, y);
+        ctx.fillText(`fps:${fps}`, cvs.width - 10, 50);
     }
 
-    fillText(`${ping}ms`, cvs.width - 45, 20, addOpacity("#0ff", 1), `${20}px Arial`);
+    fillText(`${ping}ms`, cvs.width - 45, 20, addOpacity("#0ff", 1), `20px Arial`);
 }
+
 function bk() {
     ctx.clearRect(0, 0, cvs.width, cvs.height);
     ctx.save();
@@ -446,16 +618,17 @@ function bk() {
     ctx.fillRect(0, 0, map.width, map.height);
     ctx.restore();
 }
+
 function player_input() {
     const speed = 250;
     let dx = 0, dy = 0;
 
+    // 計算 dx, dy ... (原邏輯不變)
     if (isMobile && joystick.active && (joystick.sx != 0 || joystick.sy != 0)) {
-        let j = joystick;
         let v = speed * (1 + add_speed.active);
-        let vv = Math.hypot(j.sx, j.sy);
-        dx = (j.sx / vv) * v;
-        dy = (j.sy / vv) * v;
+        let vv = Math.hypot(joystick.sx, joystick.sy);
+        dx = (joystick.sx / vv) * v;
+        dy = (joystick.sy / vv) * v;
     } else {
         let v = speed * (1 + keys.shift);
         if ((keys.w || keys.s) && (keys.a || keys.d)) v /= Math.sqrt(2);
@@ -465,22 +638,49 @@ function player_input() {
         else if (keys.d > keys.a) dx = v;
     }
 
-    socket.emit('playerInput', { dx: dx, dy: dy });
+    dx = Math.round(dx);
+    dy = Math.round(dy);
+
+    // ★ 關鍵：本地自己的蛇【立刻套用速度】，不需要等伺服器回傳！
+    if (my_snake) {
+        my_snake.dx = dx;
+        my_snake.dy = dy;
+    }
+
+    // 發送給伺服器 (原節流邏輯不變)
+    const now = performance.now();
+    const isChanged = (dx !== lastSentInput.dx || dy !== lastSentInput.dy);
+    if ((isChanged && now - lastSentInput.time > 33) || now - lastSentInput.time > 200) {
+        socket.emit('playerInput', { dx, dy });
+        lastSentInput.dx = dx;
+        lastSentInput.dy = dy;
+        lastSentInput.time = now;
+    }
 }
-function updateCamera() {
-    if (my_snake == null) return;
-    if (my_snake.x == undefined || my_snake.y == undefined) return;
+
+// 相機緊密平滑跟隨，消除蛇在螢幕中心的來回晃動
+function updateCamera(dt) {
+    if (!my_snake || my_snake.x === undefined) return;
+
     let targetX = my_snake.x + rr - camera.width / 2;
     let targetY = my_snake.y + rr - camera.height / 2;
-    let dx = Math.max(-margin, Math.min(targetX, map.width - camera.width + margin)) - camera.x;
-    let dy = Math.max(-margin, Math.min(targetY, map.height - camera.height + margin)) - camera.y;
-    let lerpFactor = 6 / (fps || 1);
-    camera.x += dx * lerpFactor;
-    camera.y += dy * lerpFactor;
+    let clampedX = Math.max(-margin, Math.min(targetX, map.width - camera.width + margin));
+    let clampedY = Math.max(-margin, Math.min(targetY, map.height - camera.height + margin));
+
+    if (!camera.inited) {
+        camera.x = clampedX;
+        camera.y = clampedY;
+        camera.inited = true;
+    } else {
+        let factor = 1 - Math.exp(-22 * dt);
+        camera.x += (clampedX - camera.x) * factor;
+        camera.y += (clampedY - camera.y) * factor;
+    }
 
     if (map.width < camera.width) camera.x = -(camera.width - map.width) / 2;
     if (map.height < camera.height) camera.y = -(camera.height - map.height) / 2;
 }
+
 function updateFps() {
     let time = performance.now();
     if (lastTime) {
@@ -488,21 +688,32 @@ function updateFps() {
         if (deltaTime > 100) { fps = Math.round(frameCount * 1000 / deltaTime); frameCount = 0; lastTime = time; }
     }
 }
+
 function update() {
+    let now = performance.now();
+    let dt = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
+    if (dt > 0.1) dt = 0.1;
+
     updateFps();
-    updateCamera();
     player_input();
-    if (updating) {
-        bk();
-        draw();
-        updating = 0;
-    }
+
+    // 1. 在 120Hz 下將所有物件流體平滑推移
+    updateSmoothEntities(dt);
+
+    // 2. 相機同步緊密平滑跟隨
+    updateCamera(dt);
+
+    // 3. 繪製畫面
+    bk();
+    draw();
+
     requestAnimationFrame(update);
 }
+
 function initButtons() {
     buttons = [];
 
-    //fullscreen
     let button_flsc = new Button(1, () => {
         setTimeout(() => {
             if (isFullScreen()) exitFullScreen();
@@ -512,14 +723,14 @@ function initButtons() {
     button_flsc.addShape(new Path2D(`${svgarc(50, 50, 30)}`), '#fff8', 0, 'fill');
     button_flsc.addShape(new Path2D(`${svgarc(50, 50, 30)}`), '#fff5', 1, 'fill');
     buttons.push(button_flsc);
-    //fps
+
     let button_fps = new Button(1, () => {
         showFps ^= 1;
     }, ctx);
     button_fps.addShape(new Path2D(`${svgarc(130, 50, 30)}`), '#fff8', 0, 'fill');
     button_fps.addShape(new Path2D(`${svgarc(130, 50, 30)}`), '#fff5', 1, 'fill');
     buttons.push(button_fps);
-    //rank(isMobile)
+
     if (!isMobile) return;
     let button_rank = new Button(1, () => {
         showRank ^= 1;
@@ -528,7 +739,7 @@ function initButtons() {
     button_rank.addShape(new Path2D(`${svgarc(210, 50, 30)}`), '#fff5', 1, 'fill');
     buttons.push(button_rank);
 }
-//event
+
 window.addEventListener('resize', setcvswh);
 document.onkeydown = (e) => {
     if (e.key == 'ArrowUp' || e.key == 'w' || e.key == 'W') keys.w = performance.now();
@@ -537,7 +748,7 @@ document.onkeydown = (e) => {
     if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = performance.now();
     if (e.key == 'Shift') keys.shift = 1;
     if (e.key == 'q' || e.key == 'Q') showRank = 1;
-}
+};
 document.onkeyup = (e) => {
     if (e.key == 'ArrowUp' || e.key == 'w' || e.key == 'W') keys.w = 0;
     if (e.key == 'ArrowLeft' || e.key == 'a' || e.key == 'A') keys.a = 0;
@@ -545,7 +756,8 @@ document.onkeyup = (e) => {
     if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = 0;
     if (e.key == 'Shift') keys.shift = 0;
     if (e.key == 'q' || e.key == 'Q') showRank = 0;
-}
+};
+
 cvs.addEventListener('pointerdown', (e) => {
     const rect = cvs.getBoundingClientRect();
     const x = (e.clientX - rect.left) * ti;
@@ -576,6 +788,7 @@ cvs.addEventListener('pointerdown', (e) => {
         add_speed.y = y;
     }
 });
+
 cvs.addEventListener('pointermove', (e) => {
     const rect = cvs.getBoundingClientRect();
     const x = (e.clientX - rect.left) * ti;
@@ -597,6 +810,7 @@ cvs.addEventListener('pointermove', (e) => {
         }
     }
 });
+
 cvs.addEventListener('pointerup', (e) => {
     if (e.pointerId == joystick.id) {
         joystick.id = -1;
@@ -619,9 +833,10 @@ setInterval(() => {
     lastPingTime = performance.now();
     socket.emit('ping');
 }, 1000);
+
 //connect
 socket.on('connect', () => {
-    let num = Math.floor(Math.random() * 1000); // 0~999
+    let num = Math.floor(Math.random() * 1000);
     let str = num.toString().padStart(3, '0');
     const p = `Player${str}`;
     ipt_name.value = p;
@@ -646,21 +861,17 @@ socket.on('connect', () => {
         socket.emit('setName', { name: name });
         ipt_name.removeEventListener('keydown', f1);
         enter_name_btn.removeEventListener('click', f2);
-
     });
 });
+
 //start
 socket.on('start', (data) => {
     my_id = data.id; rr = data.rr; map = data.map;
     setcvswh();
     initButtons();
     lastTime = performance.now();
-    gameWorker.postMessage({ type: 'init', rr: rr, my_id: my_id });
+    lastFrameTime = performance.now();
     requestAnimationFrame(update);
 });
-//game state
-socket.on('gameState', (state) => {
-    //to worker
-    gameWorker.postMessage({ type: 'game_state', state: state });
-});
+
 disableMobileScrolling();
