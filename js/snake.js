@@ -4,14 +4,14 @@ var my_id = null, my_snake = null;
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 var cvs = $("#cvs");
-var ipt_name =  $("#ipt_name");
-var instruction =  $("#instruction");
-var name_div =  $("#name_div");
-var enter_name_btn =  $("#enter_name_btn");
+var ipt_name = $("#ipt_name");
+var instruction = $("#instruction");
+var name_div = $("#name_div");
+var enter_name_btn = $("#enter_name_btn");
 var ctx = cvs.getContext("2d");
 var ti;
 var rr;
-var ping = null,offset=0;
+var ping = null, offset = 0;
 var map = { width: 0, height: 0 };
 var client_snakes = [];
 var client_foods = [];
@@ -19,7 +19,7 @@ const gameWorker = new Worker('worker.js');
 
 var buttons = [];
 
-var lastTime, frameCount=0, fps = 60;
+var lastTime, frameCount = 0, fps = 60;
 const margin = 100;
 const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase());
 var keys = { w: 0, a: 0, s: 0, d: 0, shift: 0 };
@@ -27,16 +27,16 @@ var camera = { x: 0, y: 0, width: 0, height: 0 };
 var joystick = { x: 0, y: 0, default_x: 0, default_y: 0, active: 0, id: -1, sx: 0, sy: 0, r: 85 };
 var add_speed = { x: 0, y: 0, default_x: 0, default_y: 0, id: -1, r: 85 - 5, active: 0 };
 
-var showRank = 0, showFps = 0,updating=0;
+var showRank = 0, showFps = 0, updating = 0;
 
-gameWorker.onmessage = function(e) {
+gameWorker.onmessage = function (e) {
     const data = e.data;
     client_snakes = data.snakes;
     my_snake = client_snakes.find(s => s.id === my_id);
     client_foods = data.foods;
     map = data.map;
     rr = data.rr;
-    updating=1;
+    updating = 1;
 };
 //class
 class Button {
@@ -102,7 +102,7 @@ class Button {
     }
 }
 function drawSnakeHead(s) {
-    let b = {x: s.x, y: s.y};
+    let b = { x: s.x, y: s.y };
     let alpha = 255;
     let r = s.r;
     alpha = alpha.toString(16).padStart(2, '0').toLowerCase();
@@ -111,21 +111,20 @@ function drawSnakeHead(s) {
     ctx.arc(b.x, b.y, r, 0, 2 * Math.PI);
     ctx.fill();
 
-    if (Date.now()+offset - s.err[1].lastTime < s.err[1].waitTime) {
-        fillText('?', b.x, b.y, "#fff", 1, `${s.r}px Arial`);
+    if (Date.now() + offset - s.err[1].lastTime < s.err[1].waitTime) {
+        fillText('?', b.x, b.y, "#fff", `${s.r}px Arial`);
     }
     else {
-        fillText(s.score, b.x, b.y, "#fff", 1, `${s.r / 1.5}px Arial`);
+        fillText(s.score, b.x, b.y, "#fff", `${s.r / 1.5}px Arial`);
     }
-    fillText(s.name, b.x, b.y - s.r * 1.5, "#fff", 1, `${s.r / 1.5}px Arial`);
+    fillText(s.name, b.x, b.y - s.r * 1.5, "#fff", `${s.r / 1.5}px Arial`);
     for (let i = 0; i < s.chscs.length; i++) {
         let c = s.chscs[i];
-        if (Date.now()+offset - c.lastTime < c.waitTime) {
+        if (Date.now() + offset - c.lastTime < c.waitTime) {
             fillText(c.txt,
                 s.body[0].x,
-                s.body[0].y - s.r * 1.5 - s.r * 2 * (Date.now()+offset - c.lastTime) / c.waitTime,
-                `hsla(${(540 - i * 34) % 360}, 100%, 50%, ${1 - (Date.now()+offset - c.lastTime) / c.waitTime})`,
-                1,
+                s.body[0].y - s.r * 1.5 - s.r * 2 * (Date.now() + offset - c.lastTime) / c.waitTime,
+                `hsla(${(540 - i * 34) % 360}, 100%, 50%, ${1 - (Date.now() + offset - c.lastTime) / c.waitTime})`,
                 `${s.r / 1.5}px Arial`);
         } else {
             s.chscs.splice(i--, 1);
@@ -137,29 +136,29 @@ function drawSnakeBody(s) {
     const VIEW_RIGHT = camera.x + camera.width;
     const VIEW_TOP = camera.y;
     const VIEW_BOTTOM = camera.y + camera.height;
-    
+
     const baseStep = 1;
     const lengthFactor = Math.min(1, 50 / s.body.length) || 1;
     const scoreFactor = Math.sqrt(Math.log10(s.score + 10)) || 1;
     const DRAW_STEP = Math.max(baseStep, Math.floor(baseStep * lengthFactor * scoreFactor));
 
     for (let i = 0; i < s.body.length; i++) {
-        let x=s.body[i].x;
-        let y=s.body[i].y;
+        let x = s.body[i].x;
+        let y = s.body[i].y;
         if (i % DRAW_STEP !== 0) continue;
-        
+
         const segmentRatio = 1 - i / s.body.length;
         let r = s.r * segmentRatio;
-        
-        if (x + r < VIEW_LEFT || x - r > VIEW_RIGHT || 
+
+        if (x + r < VIEW_LEFT || x - r > VIEW_RIGHT ||
             y + r < VIEW_TOP || y - r > VIEW_BOTTOM) {
             continue;
         }
-        
+
         let alpha = Math.floor(segmentRatio * 255 / 1.5 / Math.log10(s.score + 1 || 1));
         alpha = Math.max(1, Math.min(255, alpha));
         alpha = alpha.toString(16).padStart(2, '0').toLowerCase();
-        
+
         ctx.fillStyle = `${s.clr}${alpha}`;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, 2 * Math.PI);
@@ -173,21 +172,21 @@ function drawFood(f) {
         ctx.arc(f.x, f.y, f.dt.r, 0, 2 * Math.PI);
         ctx.arc(f.dt.to.x, f.dt.to.y, f.dt.r, 0, 2 * Math.PI);
         ctx.fill();
-        fillText(f.dt.text[0], f.x, f.y, "#ff0000", 1);
-        fillText(f.dt.text[1], f.dt.to.x, f.dt.to.y, "#ff0000", 1);
+        fillText(f.dt.text[0], f.x, f.y, "#ff0000");
+        fillText(f.dt.text[1], f.dt.to.x, f.dt.to.y, "#ff0000");
     }
     if (f.type == 1 || f.type == 2 || f.type == 3) {
         ctx.fillStyle = f.dt.clr;
         ctx.beginPath();
         ctx.arc(f.x, f.y, f.dt.r, 0, 2 * Math.PI);
         ctx.fill();
-        fillText(f.dt.text[0], f.x, f.y, "#ff0000", 1);
+        fillText(f.dt.text[0], f.x, f.y, "#ff0000");
     }
 }
 function disableMobileScrolling() {
     document.addEventListener('touchmove', (e) => {
-        e.preventDefault(); 
-    }, { passive: false }); 
+        e.preventDefault();
+    }, { passive: false });
 }
 //main functions
 function setcvswh() {
@@ -210,22 +209,18 @@ function setcvswh() {
     add_speed.default_x = cvs.width / 5 * 4;
     add_speed.default_y = cvs.height / 4 * 3;
 }
-function fillText(text, x, y, clr, a, font = `${rr * 1.3}px Arial`) {
+function fillText(text, x, y, clr, font = `${rr * 1.3}px Arial`) {
     ctx.save();
     ctx.font = font;
     ctx.fillStyle = clr;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (a) {
-        x -= camera.x;
-        y -= camera.y;
-    }
     ctx.fillText(text, x, y);
     ctx.restore();
 }
 function draw() {
     ctx.save();
-
+    ctx.translate(-camera.x, -camera.y);
     //draw grid
     ctx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
     ctx.lineWidth = 1;
@@ -265,25 +260,23 @@ function draw() {
     }
 
     const s = [...client_snakes].sort((a, b) => b.r - a.r);
-    
+
     //draw snakes
     for (let i = 0; i < s.length; i++) {
-        if(s[i].id===my_id) continue;
+        if (s[i].id === my_id) continue;
         drawSnakeBody(s[i]);
     }
     for (let i = s.length - 1; i >= 0; i--) {
-        if(s[i].id===my_id) continue;
+        if (s[i].id === my_id) continue;
         drawSnakeHead(s[i]);
     }
     if (my_snake) {
         drawSnakeBody(my_snake);
         drawSnakeHead(my_snake);
     }
-    
-    const mySnake = client_snakes.find(s => s.id === my_id);
-    if (mySnake) {
-        drawSnakeHead(mySnake);
-    }
+
+    ctx.restore();
+
     //joystick
     if (isMobile) {
         let j = joystick;
@@ -291,9 +284,9 @@ function draw() {
         ctx.strokeStyle = "#0005";
         ctx.fillStyle = "#fff3";
         if (j.active) {
-            ctx._arc(j.x, j.y, j.r, 0, Math.PI * 2);
+            ctx.arc(j.x, j.y, j.r, 0, Math.PI * 2);
         } else {
-            ctx._arc(j.default_x, j.default_y, j.r, 0, Math.PI * 2);
+            ctx.arc(j.default_x, j.default_y, j.r, 0, Math.PI * 2);
         }
         ctx.fill();
         ctx.stroke();
@@ -301,17 +294,17 @@ function draw() {
         ctx.strokeStyle = "#0005";
         ctx.fillStyle = "#fff3";
         if (j.active) {
-            ctx._arc(j.x, j.y, j.r / 1.6, 0, Math.PI * 2);
+            ctx.arc(j.x, j.y, j.r / 1.6, 0, Math.PI * 2);
         } else {
-            ctx._arc(j.default_x, j.default_y, j.r / 1.6, 0, Math.PI * 2);
+            ctx.arc(j.default_x, j.default_y, j.r / 1.6, 0, Math.PI * 2);
         }
         ctx.stroke();
         ctx.beginPath();
         ctx.fillStyle = "#fff5";
         if (j.active) {
-            ctx._arc(j.x + j.sx, j.y + j.sy, j.r / 4, 0, Math.PI * 2);
+            ctx.arc(j.x + j.sx, j.y + j.sy, j.r / 4, 0, Math.PI * 2);
         } else {
-            ctx._arc(j.default_x, j.default_y, j.r / 4, 0, Math.PI * 2);
+            ctx.arc(j.default_x, j.default_y, j.r / 4, 0, Math.PI * 2);
         }
         ctx.fill();
         ctx.stroke();
@@ -324,15 +317,15 @@ function draw() {
         ctx.strokeStyle = "#0005";
         ctx.fillStyle = addOpacity("#fff", 0.2 + d.active / 3);
         if (d.active) {
-            ctx._arc(d.x, d.y, d.r, 0, Math.PI * 2);
+            ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
         } else {
-            ctx._arc(d.default_x, d.default_y, d.r, 0, Math.PI * 2);
+            ctx.arc(d.default_x, d.default_y, d.r, 0, Math.PI * 2);
         }
         ctx.fill();
         if (d.active) {
-            fillText("🍌", d.x, d.y, addOpacity("#000", 0.7 + d.active / 10 * 3), 0, `${d.r}px Arial`);
+            fillText("🍌", d.x, d.y, addOpacity("#000", 0.7 + d.active / 10 * 3), `${d.r}px Arial`);
         } else {
-            fillText("🍌", d.default_x, d.default_y, addOpacity("#000", 0.7 + d.active / 10 * 3), 0, `${d.r}px Arial`);
+            fillText("🍌", d.default_x, d.default_y, addOpacity("#000", 0.7 + d.active / 10 * 3), `${d.r}px Arial`);
         }
     }
 
@@ -342,19 +335,19 @@ function draw() {
         buttons[i].draw();
     }
 
-    fillText("flsc", 50, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3), 0);
-    fillText("fps", 130, 50, addOpacity("#0f0", 1 - buttons[1].hover / 3), 0);
-    if(isMobile){
-        fillText("rank",210, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3), 0);
+    fillText("flsc", 50, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3));
+    fillText("fps", 130, 50, addOpacity("#0f0", 1 - buttons[1].hover / 3));
+    if (isMobile) {
+        fillText("rank", 210, 50, addOpacity("#0f0", 1 - buttons[0].hover / 3));
     }
-    
+
     const sortedSnakes = [...client_snakes].sort((a, b) => b.score - a.score);
     // rank
     if (showRank) {
         let lx = cvs.width / 3 - 10;
         let ly = 130;
         let r = Math.min(200, cvs.width / 3);
-        
+
         // title
         ctx.font = '40px Arial';
         ctx.fillStyle = '#f00';
@@ -362,46 +355,46 @@ function draw() {
         ctx.fillText(`Rank`, lx, ly);
         ctx.fillText(`Name`, lx + r, ly);
         ctx.fillText(`Score`, lx + r * 2, ly);
-        
+
         let currentRank = 1;
         let lastScore = null;
         let mySnakeWithRank = null;
-        
+
         const rankedSnakes = [];
         for (let i = 0; i < sortedSnakes.length; i++) {
             const s = sortedSnakes[i];
-            
+
             if (s.score !== lastScore) {
                 currentRank = i + 1;
             }
-            
+
             const snakeWithRank = { ...s, rank: currentRank };
             rankedSnakes.push(snakeWithRank);
 
             if (s.id === my_id) {
                 mySnakeWithRank = snakeWithRank;
             }
-            
+
             lastScore = s.score;
         }
-        
+
         let displayList = rankedSnakes.slice(0, 10);
         const isMySnakeInTop10 = displayList.some(s => s.id === my_id);
-        
+
         if (mySnakeWithRank && !isMySnakeInTop10) {
             displayList.push(mySnakeWithRank);
         }
         for (let i = 0; i < displayList.length; i++) {
             const s = displayList[i];
             const yOffset = (i + 1) * 40 + ly;
-            
-            if (s.id === my_id) { 
+
+            if (s.id === my_id) {
                 ctx.save();
                 ctx.fillStyle = "#3aa8";
-                ctx._fillRect(lx - 85, yOffset - 35, r * 2 + 90, 40); 
+                ctx.fillRect(lx - 85, yOffset - 35, r * 2 + 90, 40);
                 ctx.restore();
             }
-            
+
             ctx.fillStyle = '#ddd';
             ctx.fillText(`${s.rank}`, lx, yOffset, r - 20);
             ctx.fillText(`${s.name}`, lx + r, yOffset, r - 20);
@@ -415,7 +408,7 @@ function draw() {
     let currentRank = 1;
     for (let i = 0; i < totalPlayers; i++) {
         const s = sortedSnakes[i];
-        
+
         if (s.score !== lastScore) {
             currentRank = i + 1;
         }
@@ -424,11 +417,11 @@ function draw() {
             myRank = currentRank;
             break;
         }
-        
+
         lastScore = s.score;
 
     }
-    fillText(`${myRank}/${totalPlayers}`, cvs.width-55, 80, addOpacity("#eee", 1), 0);
+    fillText(`${myRank}/${totalPlayers}`, cvs.width - 55, 80, addOpacity("#eee", 1));
 
     //draw fps
     if (showFps) {
@@ -441,48 +434,27 @@ function draw() {
         ctx.fillText(text, x, y);
     }
 
-    fillText(`${ping}ms`, cvs.width-45, 20, addOpacity("#0ff", 1), 0,`${20}px Arial`);
-    ctx.restore();
+    fillText(`${ping}ms`, cvs.width - 45, 20, addOpacity("#0ff", 1), `${20}px Arial`);
 }
 function bk() {
     ctx.clearRect(0, 0, cvs.width, cvs.height);
     ctx.save();
+    ctx.translate(-camera.x, -camera.y);
     ctx.fillStyle = "#181818";
     ctx.fillRect(-margin, -margin, map.width + margin * 2, map.height + margin * 2);
     ctx.fillStyle = "#333";
     ctx.fillRect(0, 0, map.width, map.height);
     ctx.restore();
 }
-function bindCamera(ctx, camera) {
-    ctx._moveTo = ctx.moveTo;
-    ctx._lineTo = ctx.lineTo;
-    ctx._arc = ctx.arc;
-    ctx._fillRect = ctx.fillRect;
-
-    ctx.moveTo = function (x, y) {
-        this._moveTo(x - camera.x, y - camera.y);
-    };
-
-    ctx.lineTo = function (x, y) {
-        this._lineTo(x - camera.x, y - camera.y);
-    };
-
-    ctx.arc = function (x, y, radius, startAngle, endAngle, anticlockwise) {
-        this._arc(x - camera.x, y - camera.y, radius, startAngle, endAngle, anticlockwise);
-    };
-    ctx.fillRect = function (x, y, w, h) {
-        this._fillRect(x - camera.x, y - camera.y, w, h);
-    };
-}
 function player_input() {
     const speed = 250;
     let dx = 0, dy = 0;
-    
+
     if (isMobile && joystick.active && (joystick.sx != 0 || joystick.sy != 0)) {
         let j = joystick;
         let v = speed * (1 + add_speed.active);
         let vv = Math.hypot(j.sx, j.sy);
-        dx = (j.sx / vv) * v; 
+        dx = (j.sx / vv) * v;
         dy = (j.sy / vv) * v;
     } else {
         let v = speed * (1 + keys.shift);
@@ -492,19 +464,19 @@ function player_input() {
         if (keys.a > keys.d) dx = -v;
         else if (keys.d > keys.a) dx = v;
     }
-    
-    socket.emit('playerInput', { dx: dx, dy: dy});
+
+    socket.emit('playerInput', { dx: dx, dy: dy });
 }
 function updateCamera() {
-    if(my_snake==null) return;
-    if (my_snake.x==undefined || my_snake.y==undefined) return;
+    if (my_snake == null) return;
+    if (my_snake.x == undefined || my_snake.y == undefined) return;
     let targetX = my_snake.x + rr - camera.width / 2;
     let targetY = my_snake.y + rr - camera.height / 2;
-    let dx=Math.max(-margin, Math.min(targetX, map.width - camera.width + margin))-camera.x;
-    let dy=Math.max(-margin, Math.min(targetY, map.height - camera.height + margin))-camera.y;
-    let lerpFactor = 6/(fps||1);
-    camera.x+=dx*lerpFactor;
-    camera.y+=dy*lerpFactor;
+    let dx = Math.max(-margin, Math.min(targetX, map.width - camera.width + margin)) - camera.x;
+    let dy = Math.max(-margin, Math.min(targetY, map.height - camera.height + margin)) - camera.y;
+    let lerpFactor = 6 / (fps || 1);
+    camera.x += dx * lerpFactor;
+    camera.y += dy * lerpFactor;
 
     if (map.width < camera.width) camera.x = -(camera.width - map.width) / 2;
     if (map.height < camera.height) camera.y = -(camera.height - map.height) / 2;
@@ -520,23 +492,23 @@ function update() {
     updateFps();
     updateCamera();
     player_input();
-    if(updating){
+    if (updating) {
         bk();
         draw();
-        updating=0;
+        updating = 0;
     }
     requestAnimationFrame(update);
 }
 function initButtons() {
     buttons = [];
-    
+
     //fullscreen
     let button_flsc = new Button(1, () => {
         setTimeout(() => {
             if (isFullScreen()) exitFullScreen();
             else enterFullScreen();
         }, 100);
-    }, ctx); 
+    }, ctx);
     button_flsc.addShape(new Path2D(`${svgarc(50, 50, 30)}`), '#fff8', 0, 'fill');
     button_flsc.addShape(new Path2D(`${svgarc(50, 50, 30)}`), '#fff5', 1, 'fill');
     buttons.push(button_flsc);
@@ -548,7 +520,7 @@ function initButtons() {
     button_fps.addShape(new Path2D(`${svgarc(130, 50, 30)}`), '#fff5', 1, 'fill');
     buttons.push(button_fps);
     //rank(isMobile)
-    if(!isMobile) return;
+    if (!isMobile) return;
     let button_rank = new Button(1, () => {
         showRank ^= 1;
     }, ctx);
@@ -564,7 +536,7 @@ document.onkeydown = (e) => {
     if (e.key == 'ArrowDown' || e.key == 's' || e.key == 'S') keys.s = performance.now();
     if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = performance.now();
     if (e.key == 'Shift') keys.shift = 1;
-    if (e.key == 'q' || e.key == 'Q') showRank = 1; 
+    if (e.key == 'q' || e.key == 'Q') showRank = 1;
 }
 document.onkeyup = (e) => {
     if (e.key == 'ArrowUp' || e.key == 'w' || e.key == 'W') keys.w = 0;
@@ -572,7 +544,7 @@ document.onkeyup = (e) => {
     if (e.key == 'ArrowDown' || e.key == 's' || e.key == 'S') keys.s = 0;
     if (e.key == 'ArrowRight' || e.key == 'd' || e.key == 'D') keys.d = 0;
     if (e.key == 'Shift') keys.shift = 0;
-    if (e.key == 'q' || e.key == 'Q') showRank = 0; 
+    if (e.key == 'q' || e.key == 'Q') showRank = 0;
 }
 cvs.addEventListener('pointerdown', (e) => {
     const rect = cvs.getBoundingClientRect();
@@ -639,52 +611,51 @@ cvs.addEventListener('pointerup', (e) => {
 //ping
 let lastPingTime = 0;
 socket.on('pong', (data) => {
-  offset=data.now-Date.now();
-  ping = performance.now() - lastPingTime;
-  ping = Math.round(ping);
+    offset = data.now - Date.now();
+    ping = performance.now() - lastPingTime;
+    ping = Math.round(ping);
 });
 setInterval(() => {
-  lastPingTime = performance.now();
-  socket.emit('ping');
+    lastPingTime = performance.now();
+    socket.emit('ping');
 }, 1000);
 //connect
 socket.on('connect', () => {
     let num = Math.floor(Math.random() * 1000); // 0~999
     let str = num.toString().padStart(3, '0');
-    const p=`Player${str}`;
-    ipt_name.value=p;
-    ipt_name.placeholder="enter your name";
+    const p = `Player${str}`;
+    ipt_name.value = p;
+    ipt_name.placeholder = "enter your name";
     ipt_name.focus();
-    instruction.innerText="Use WASD or Arrow Keys to move\nHold Shift to speed up\nOn mobile, use joystick and banana button";
-    let f1,f2;
-    ipt_name.addEventListener('keydown',f1=(e) => {
+    instruction.innerText = "Use WASD or Arrow Keys to move\nHold Shift to speed up\nOn mobile, use joystick and banana button";
+    let f1, f2;
+    ipt_name.addEventListener('keydown', f1 = (e) => {
         if (e.key === 'Enter') {
-            let name=ipt_name.value;
-            if(name==null || name.trim()=="") name=p;
-            name_div.style.display="none";
-            socket.emit('setName', { name: name  });
-            ipt_name.removeEventListener('keydown',f1);
-            enter_name_btn.removeEventListener('click',f2);
+            let name = ipt_name.value;
+            if (name == null || name.trim() == "") name = p;
+            name_div.style.display = "none";
+            socket.emit('setName', { name: name });
+            ipt_name.removeEventListener('keydown', f1);
+            enter_name_btn.removeEventListener('click', f2);
         }
     });
-    enter_name_btn.addEventListener('click',f2=(e) => {
-        let name=ipt_name.value;
-        if(name==null || name.trim()=="") name=p;
-        name_div.style.display="none";
-        socket.emit('setName', { name: name  });
-        ipt_name.removeEventListener('keydown',f1);
-        enter_name_btn.removeEventListener('click',f2);
-        
+    enter_name_btn.addEventListener('click', f2 = (e) => {
+        let name = ipt_name.value;
+        if (name == null || name.trim() == "") name = p;
+        name_div.style.display = "none";
+        socket.emit('setName', { name: name });
+        ipt_name.removeEventListener('keydown', f1);
+        enter_name_btn.removeEventListener('click', f2);
+
     });
 });
 //start
 socket.on('start', (data) => {
     my_id = data.id; rr = data.rr; map = data.map;
     setcvswh();
-    bindCamera(ctx, camera);
     initButtons();
     lastTime = performance.now();
-    gameWorker.postMessage({ type: 'init', rr: rr ,my_id: my_id});
+    gameWorker.postMessage({ type: 'init', rr: rr, my_id: my_id });
     requestAnimationFrame(update);
 });
 //game state
